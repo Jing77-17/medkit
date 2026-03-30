@@ -179,6 +179,7 @@ function openSettings() {
   + storageHTML
   + '<div class="flex gap-2"><button onclick="exportData()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📤 导出备份</button><button onclick="document.getElementById(\'importFile\').click()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📥 导入数据</button><input id="importFile" type="file" accept=".json" onchange="importData(event)" class="hidden"></div>'
   + '<button onclick="exportCSV()" class="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">📊 导出为 Excel 表格</button>'
+  + '<button onclick="exportPhotos()" class="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">📷 导出照片</button>'
   + '<button onclick="clearAllData()" class="w-full py-2.5 border border-red-200 rounded-xl text-sm text-red-500 hover:bg-red-50">🗑️ 清除所有数据</button>'
   + '</div></div>');
   if (navigator.storage && navigator.storage.estimate) {
@@ -272,6 +273,73 @@ function exportCSV() {
   }
 
   toast('已导出 Excel 表格');
+}
+
+// ===== Photo Export (ZIP) =====
+async function exportPhotos() {
+  const allMeds = _cache.medicines || [];
+  const allExps = _cache.experiences || [];
+  let photoCount = 0;
+  allMeds.forEach(m => { if (m.photos && m.photos.length) photoCount += m.photos.length; });
+  allExps.forEach(e => { if (e.photos && e.photos.length) photoCount += e.photos.length; });
+
+  if (!photoCount) { toast('没有照片可导出'); return; }
+  if (typeof JSZip === 'undefined') { toast('需要网络加载 JSZip 库，请检查网络'); return; }
+
+  toast('正在打包 ' + photoCount + ' 张照片...');
+
+  const zip = new JSZip();
+  const date = new Date().toISOString().slice(0, 10);
+
+  // 药品照片
+  allMeds.forEach(m => {
+    if (!m.photos || !m.photos.length) return;
+    const folder = zip.folder('药品照片');
+    m.photos.forEach((b64, i) => {
+      folder.file(m.name + '_' + (i + 1) + '.jpg', b64, { base64: true });
+    });
+  });
+
+  // 就医记录照片
+  allExps.forEach(e => {
+    if (!e.photos || !e.photos.length) return;
+    const mb = getMb(e.memberId);
+    const prefix = (e.date || '未知日期') + '_' + (e.doctorName || (mb ? mb.name : '未知'));
+    const folder = zip.folder('就医照片');
+    e.photos.forEach((b64, i) => {
+      folder.file(prefix + '_' + (i + 1) + '.jpg', b64, { base64: true });
+    });
+  });
+
+  // 同时导出一个索引文件
+  let indexContent = '=== 药小记照片索引 ===\n导出时间：' + new Date().toLocaleString('zh-CN') + '\n\n';
+  indexContent += '【药品照片】\n';
+  allMeds.forEach(m => {
+    if (!m.photos || !m.photos.length) return;
+    indexContent += '  ' + m.name + ' — ' + m.photos.length + ' 张';
+    if (m.category) indexContent += '（' + m.category + '）';
+    if (m.expiryDate) indexContent += '，过期：' + m.expiryDate;
+    indexContent += '\n';
+  });
+  indexContent += '\n【就医照片】\n';
+  allExps.forEach(e => {
+    if (!e.photos || !e.photos.length) return;
+    const mb = getMb(e.memberId);
+    indexContent += '  ' + (e.date || '') + ' ' + (e.doctorName || '') + (e.diagnosis ? ' — ' + e.diagnosis : '') + ' — ' + e.photos.length + ' 张';
+    if (mb) indexContent += '（' + mb.name + '）';
+    indexContent += '\n';
+  });
+  zip.file('照片索引.txt', indexContent);
+
+  try {
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '药小记照片_' + date + '.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('已导出 ' + photoCount + ' 张照片');
+  } catch (err) { toast('导出失败：' + err.message); }
 }
 
 // ===== Photo Recognition =====
