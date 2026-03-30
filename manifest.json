@@ -1,0 +1,17 @@
+{
+  "name": "药小记",
+  "short_name": "药小记",
+  "description": "家庭药品管理 & 就医记录",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8F5F2",
+  "theme_color": "#E8564A",
+  "orientation": "portrait",
+  "categories": ["health", "medical", "lifestyle"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

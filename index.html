@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>药小记</title>
+<meta name="description" content="家庭药品管理 & 就医记录">
+<meta name="theme-color" content="#E8564A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="药小记">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --c-primary: #E8564A;
+    --c-primary-light: #FFF1EF;
+    --c-primary-dark: #D04A3F;
+    --c-bg: #F5F2EF;
+    --c-card: #FFFFFF;
+    --c-text: #2D2D2D;
+    --c-text2: #999;
+    --c-border: #F0EBE8;
+    --c-green: #34C759;
+    --c-green-bg: #EAFBEE;
+    --c-orange: #FF9500;
+    --c-orange-bg: #FFF5E6;
+    --c-red: #FF3B30;
+    --c-red-bg: #FFEDED;
+  }
+  * { -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: linear-gradient(180deg, #F8F5F2 0%, #F0ECE7 100%);
+    min-height: 100vh;
+    color: var(--c-text);
+  }
+  /* ===== Header ===== */
+  .app-header {
+    background: rgba(248,245,242,0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(240,235,232,0.5);
+  }
+  /* ===== Cards ===== */
+  .card {
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.04), 0 0.5px 1px rgba(0,0,0,0.02);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card:active { transform: scale(0.98); }
+  /* ===== Buttons ===== */
+  .btn-primary {
+    background: linear-gradient(135deg, #E8564A 0%, #F28077 100%);
+    color: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(232,86,74,0.25);
+    transition: transform 0.15s, box-shadow 0.15s;
+    border: none;
+  }
+  .btn-primary:active {
+    background: linear-gradient(135deg, #D04A3F 0%, #E8564A 100%);
+    transform: scale(0.97);
+    box-shadow: 0 2px 8px rgba(232,86,74,0.2);
+  }
+  .btn-outline {
+    border: 1.5px solid var(--c-primary);
+    color: var(--c-primary);
+    background: rgba(232,86,74,0.04);
+    border-radius: 14px;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .btn-outline:active {
+    background: rgba(232,86,74,0.1);
+    transform: scale(0.97);
+  }
+  /* ===== Bottom Nav ===== */
+  .bottom-nav {
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid rgba(240,235,232,0.4);
+  }
+  .tab-active { color: var(--c-primary); }
+  .tab-active .tab-icon { transform: scale(1.08); }
+  .tab-icon { transition: transform 0.2s ease; }
+  .tab-inactive { color: #C5C0BC; }
+  /* ===== Modal ===== */
+  .modal-bg {
+    background: rgba(0,0,0,0.32);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  #modalContent {
+    border-radius: 28px 28px 0 0;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.08);
+  }
+  .modal-handle {
+    width: 36px; height: 4px; border-radius: 2px; background: #DDD;
+    margin: 10px auto 0;
+  }
+  /* ===== Form ===== */
+  input, select, textarea {
+    font-size: 16px !important;
+    border-radius: 12px !important;
+    border: 1.5px solid #EDEAE7 !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: #FAFAF8 !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--c-primary) !important;
+    box-shadow: 0 0 0 3px rgba(232,86,74,0.08) !important;
+    outline: none;
+  }
+  /* ===== Animations ===== */
+  .fade-in { animation: fadeIn .3s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes slideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
+  .slide-up { animation: slideUp .3s ease-out; }
+  /* ===== Badges ===== */
+  .badge-expired { background: var(--c-red-bg); color: var(--c-red); }
+  .badge-warning { background: var(--c-orange-bg); color: var(--c-orange); }
+  .badge-ok { background: var(--c-green-bg); color: var(--c-green); }
+  /* ===== Status dots ===== */
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-effective { background: var(--c-green); }
+  .dot-avoid { background: var(--c-red); }
+  .dot-normal { background: #D1CDC8; }
+  /* ===== Insight cards ===== */
+  .insight-card {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+  }
+  .insight-red { background: linear-gradient(135deg, #FFF1EF 0%, #FFE8E5 100%); }
+  .insight-orange { background: linear-gradient(135deg, #FFF6ED 0%, #FFEFD9 100%); }
+  .insight-gray { background: linear-gradient(135deg, #F5F4F2 0%, #EEECEA 100%); }
+  /* ===== Scrollbar ===== */
+  ::-webkit-scrollbar { display:none; }
+  /* ===== Guide text ===== */
+  .guide-text { color: var(--c-text2); font-size: 13px; text-align: center; padding: 12px 0; }
+  /* ===== Stat card ===== */
+  .stat-card {
+    background: rgba(255,255,255,0.7);
+    border-radius: 16px;
+    border: 1px solid rgba(240,235,232,0.5);
+    transition: transform 0.2s;
+  }
+  .stat-card:active { transform: scale(0.96); }
+  /* ===== Tag pills ===== */
+  .tag-green { background: var(--c-green-bg); color: var(--c-green); }
+  .tag-red { background: var(--c-red-bg); color: var(--c-red); }
+  .tag-blue { background: #EEF2FF; color: #5B5FC7; }
+  /* ===== Group header ===== */
+  .group-header {
+    position: relative;
+    padding-left: 14px;
+  }
+  .group-header::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 2px;
+  }
+  .group-blue::before { background: #5B5FC7; }
+  .group-orange::before { background: var(--c-orange); }
+</style>
+</head>
+<body class="min-h-screen pb-20">
+
+<header class="app-header sticky top-0 z-30 px-4 py-3">
+  <div class="flex items-center justify-between max-w-lg mx-auto">
+    <h1 class="text-lg font-bold tracking-tight" style="color:var(--c-text)">💊 药小记</h1>
+    <button onclick="openSettings()" class="p-1.5 rounded-xl hover:bg-gray-100 transition-colors" style="color:var(--c-text2)" title="设置"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
+  </div>
+</header>
+
+<main id="app" class="max-w-lg mx-auto px-4 pt-4"></main>
+
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 z-30 px-2 pb-[env(safe-area-inset-bottom)]">
+  <div class="flex max-w-lg mx-auto">
+    <button onclick="switchTab('home')" id="tab-home" class="flex-1 flex flex-col items-center py-2.5 text-xs tab-active">
+      <svg class="w-5 h-5 mb-0.5 tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>首页</button>
+    <button onclick="switchTab('medicines')" id="tab-medicines" class="flex-1 flex flex-col items-center py-2.5 text-xs tab-inactive">
+      <svg class="w-5 h-5 mb-0.5 tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>药品</button>
+    <button onclick="switchTab('visits')" id="tab-visits" class="flex-1 flex flex-col items-center py-2.5 text-xs tab-inactive">
+      <svg class="w-5 h-5 mb-0.5 tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>就医</button>
+    <button onclick="switchTab('members')" id="tab-members" class="flex-1 flex flex-col items-center py-2.5 text-xs tab-inactive">
+      <svg class="w-5 h-5 mb-0.5 tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>家庭</button>
+  </div>
+</nav>
+
+<div id="modal" class="hidden fixed inset-0 z-40 modal-bg flex items-end justify-center">
+  <div id="modalContent" class="bg-white w-full max-w-lg max-h-[85vh] overflow-y-auto pb-8 slide-up">
+    <div class="modal-handle"></div>
+  </div>
+</div>
+<div id="toast" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 text-white text-sm px-5 py-2.5 rounded-2xl shadow-lg font-medium" style="background:rgba(45,45,45,0.88);backdrop-filter:blur(8px)"></div>
+
+<script>
+window.onerror = function(msg, url, line) {
+  document.getElementById('app').innerHTML = '<div style="padding:20px;color:red;background:#fff;border-radius:16px;margin:10px"><b>JS Error</b><br>Line ' + line + ': ' + msg + '</div>';
+};
+// PWA: register service worker
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+// PWA: install prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e;
+  const bar = document.createElement('div');
+  bar.id = 'installBar';
+  bar.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:50;background:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.12);display:flex;align-items:center;gap:10px;max-width:90vw';
+  bar.innerHTML = '<span style="font-size:14px;font-weight:600">💊 添加到主屏幕</span><button id="installBtn" style="background:linear-gradient(135deg,#E8564A,#F28077);color:#fff;border:none;padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600">安装</button><button onclick="this.parentElement.remove()" style="background:none;border:none;font-size:18px;color:#ccc;cursor:pointer">✕</button>';
+  document.body.appendChild(bar);
+  document.getElementById('installBtn').onclick = () => { deferredPrompt.prompt(); deferredPrompt.userChoice.then(() => { bar.remove(); deferredPrompt = null; }); };
+});
+</script>
+<script src="app.js"></script>
+</body>
+</html>
