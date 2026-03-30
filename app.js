@@ -177,7 +177,8 @@ function openSettings() {
     : '';
   openM('<div class="p-5"><div class="flex items-center justify-between mb-5"><h2 class="text-lg font-bold">⚙️ 设置</h2><button onclick="closeM()" class="text-gray-400"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div class="space-y-4"><div class="bg-blue-50 border border-blue-100 rounded-xl p-4"><div class="text-sm font-medium text-blue-800 mb-1">📷 拍照识别药品</div><div class="text-xs text-blue-600 mb-3">填入通义千问 API Key（免费申请），可在添加药品时拍照自动识别信息</div><label class="block text-sm font-medium text-gray-700 mb-1">API Key</label><div class="flex gap-2"><input id="apiKeyInput" type="password" value="'+esc(s.apiKey||'')+'" placeholder="sk-xxx" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"><button onclick="document.getElementById(\'apiKeyInput\').type=document.getElementById(\'apiKeyInput\').type===\'password\'?\'text\':\'password\'" class="shrink-0 px-3 text-gray-400 hover:text-gray-600 text-sm">👁</button></div><div class="text-xs text-gray-400 mt-2">Key 仅保存在你的浏览器本地</div><button onclick="saveSetting(\'apiKey\',document.getElementById(\'apiKeyInput\').value.trim());toast(\'已保存\')" class="w-full mt-3 bg-blue-600 text-white py-2.5 rounded-xl font-medium text-sm hover:bg-blue-700 active:scale-[0.98] transition-all">保存</button></div>'
   + storageHTML
-  + '<div class="flex gap-2"><button onclick="exportData()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📤 导出数据</button><button onclick="document.getElementById(\'importFile\').click()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📥 导入数据</button><input id="importFile" type="file" accept=".json" onchange="importData(event)" class="hidden"></div>'
+  + '<div class="flex gap-2"><button onclick="exportData()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📤 导出备份</button><button onclick="document.getElementById(\'importFile\').click()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">📥 导入数据</button><input id="importFile" type="file" accept=".json" onchange="importData(event)" class="hidden"></div>'
+  + '<button onclick="exportCSV()" class="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50">📊 导出为 Excel 表格</button>'
   + '<button onclick="clearAllData()" class="w-full py-2.5 border border-red-200 rounded-xl text-sm text-red-500 hover:bg-red-50">🗑️ 清除所有数据</button>'
   + '</div></div>');
   if (navigator.storage && navigator.storage.estimate) {
@@ -232,6 +233,45 @@ function importData(e) {
   };
   reader.readAsText(file);
   e.target.value = '';
+}
+
+// ===== CSV Export (Excel/WPS compatible) =====
+function _csvLine(arr) { return arr.map(v => { const s = String(v == null ? '' : v); return '"' + s.replace(/"/g, '""') + '"'; }).join(','); }
+function _csvDownload(filename, bom, content) {
+  const blob = new Blob([bom, content], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+function exportCSV() {
+  const BOM = '\uFEFF';
+  const date = new Date().toISOString().slice(0,10);
+
+  // 1. 药品清单
+  const medHeaders = ['药品名称','分类','功效/用途','过期日期','剩余数量','单位','备注','添加日期'];
+  let medCSV = _csvLine(medHeaders) + '\n';
+  DB.medicines.forEach(m => {
+    medCSV += _csvLine([m.name, m.category, m.efficacy, m.expiryDate, m.quantity, m.unit, m.notes, m.addedDate]) + '\n';
+  });
+  _csvDownload('药品清单_' + date + '.csv', BOM, medCSV);
+
+  // 2. 就医记录
+  const expHeaders = ['日期','患者','医生','医院','科室','诊断','处方药品','评分','有效','避雷','效果描述','副作用','备注'];
+  let expCSV = _csvLine(expHeaders) + '\n';
+  DB.experiences.forEach(e => {
+    const mb = getMb(e.memberId);
+    const medNames = getExpMedNames(e);
+    expCSV += _csvLine([e.date, mb ? (MO[mb.relation]||'') + mb.name : '', e.doctorName, e.hospital, e.department, e.diagnosis, medNames.join('+'), e.rating || '', e.effective ? '是' : '', e.avoid ? '是' : '', e.effect, e.sideEffect, e.notes]) + '\n';
+  });
+  _csvDownload('就医记录_' + date + '.csv', BOM, expCSV);
+
+  // 3. 家庭成员
+  if (_cache.members.length) {
+    const mbHeaders = ['姓名','称谓','出生日期','备注'];
+    let mbCSV = _csvLine(mbHeaders) + '\n';
+    _cache.members.forEach(m => { mbCSV += _csvLine([m.name, m.relation, m.birthday, m.notes]) + '\n'; });
+    _csvDownload('家庭成员_' + date + '.csv', BOM, mbCSV);
+  }
+
+  toast('已导出 Excel 表格');
 }
 
 // ===== Photo Recognition =====
