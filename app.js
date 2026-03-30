@@ -254,15 +254,31 @@ function exportCSV() {
   });
   _csvDownload('药品清单_' + date + '.csv', BOM, medCSV);
 
-  // 2. 就医记录
-  const expHeaders = ['日期','患者','医生','医院','科室','诊断','处方药品','评分','有效','避雷','效果描述','副作用','备注'];
-  let expCSV = _csvLine(expHeaders) + '\n';
+  // 2. 就医记录（按成员分组，组内按年份排序）
+  const expHeaders = ['日期','医生','医院','科室','诊断','处方药品','评分','有效','避雷','效果描述','副作用','备注'];
+  // 按成员分组
+  const expByMember = {};
   DB.experiences.forEach(e => {
     const mb = getMb(e.memberId);
-    const medNames = getExpMedNames(e);
-    expCSV += _csvLine([e.date, mb ? (MO[mb.relation]||'') + mb.name : '', e.doctorName, e.hospital, e.department, e.diagnosis, medNames.join('+'), e.rating || '', e.effective ? '是' : '', e.avoid ? '是' : '', e.effect, e.sideEffect, e.notes]) + '\n';
+    const name = mb ? (MO[mb.relation]||'') + mb.name : '未知成员';
+    if (!expByMember[name]) expByMember[name] = [];
+    expByMember[name].push(e);
   });
-  _csvDownload('就医记录_' + date + '.csv', BOM, expCSV);
+  // 每个成员一个文件
+  for (const [memberName, exps] of Object.entries(expByMember)) {
+    // 按年份分组排序（年份降序）
+    exps.sort((a, b) => {
+      const ya = (a.date || '').slice(0, 4) || '0000';
+      const yb = (b.date || '').slice(0, 4) || '0000';
+      return yb.localeCompare(ya) || (b.date || '').localeCompare(a.date || '');
+    });
+    let expCSV = _csvLine(expHeaders) + '\n';
+    exps.forEach(e => {
+      const medNames = getExpMedNames(e);
+      expCSV += _csvLine([e.date, e.doctorName, e.hospital, e.department, e.diagnosis, medNames.join('+'), e.rating || '', e.effective ? '是' : '', e.avoid ? '是' : '', e.effect, e.sideEffect, e.notes]) + '\n';
+    });
+    _csvDownload('就医记录_' + memberName + '_' + date + '.csv', BOM, expCSV);
+  }
 
   // 3. 家庭成员
   if (_cache.members.length) {
@@ -300,12 +316,14 @@ async function exportPhotos() {
     });
   });
 
-  // 就医记录照片
+  // 就医记录照片（按成员 → 年份分文件夹）
   allExps.forEach(e => {
     if (!e.photos || !e.photos.length) return;
     const mb = getMb(e.memberId);
-    const prefix = (e.date || '未知日期') + '_' + (e.doctorName || (mb ? mb.name : '未知'));
-    const folder = zip.folder('就医照片');
+    const memberName = mb ? (MO[mb.relation]||'') + mb.name : '未知';
+    const year = (e.date || '未知').slice(0, 4);
+    const folder = zip.folder('就医照片').folder(memberName).folder(year + '年');
+    const prefix = (e.date || '') + '_' + (e.doctorName || '');
     e.photos.forEach((b64, i) => {
       folder.file(prefix + '_' + (i + 1) + '.jpg', b64, { base64: true });
     });
@@ -322,13 +340,29 @@ async function exportPhotos() {
     indexContent += '\n';
   });
   indexContent += '\n【就医照片】\n';
+  const expGroups = {};
   allExps.forEach(e => {
     if (!e.photos || !e.photos.length) return;
     const mb = getMb(e.memberId);
-    indexContent += '  ' + (e.date || '') + ' ' + (e.doctorName || '') + (e.diagnosis ? ' — ' + e.diagnosis : '') + ' — ' + e.photos.length + ' 张';
-    if (mb) indexContent += '（' + mb.name + '）';
-    indexContent += '\n';
+    const name = mb ? (MO[mb.relation]||'') + mb.name : '未知';
+    if (!expGroups[name]) expGroups[name] = [];
+    expGroups[name].push(e);
   });
+  for (const [memberName, exps] of Object.entries(expGroups)) {
+    indexContent += '  ▸ ' + memberName + '\n';
+    const byYear = {};
+    exps.forEach(e => {
+      const y = (e.date || '未知').slice(0, 4);
+      if (!byYear[y]) byYear[y] = [];
+      byYear[y].push(e);
+    });
+    for (const [year, items] of Object.entries(byYear)) {
+      indexContent += '    ▸ ' + year + '年\n';
+      items.forEach(e => {
+        indexContent += '      ' + (e.date || '') + ' ' + (e.doctorName || '') + (e.diagnosis ? ' — ' + e.diagnosis : '') + ' — ' + e.photos.length + ' 张\n';
+      });
+    }
+  }
   zip.file('照片索引.txt', indexContent);
 
   try {
