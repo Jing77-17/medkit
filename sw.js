@@ -1,5 +1,6 @@
-const CACHE = 'yaocabinet-v2';
-const ASSETS = ['/index.html', '/app.js', '/icon.svg', '/icon-192.png', '/icon-512.png', '/manifest.json'];
+const CACHE = 'yaocabinet-v3';
+const BASE = self.location.pathname.replace(/\/sw\.js$/, '').replace(/\/$/, '') || '';
+const ASSETS = [BASE+'/index.html', BASE+'/app.js', BASE+'/icon.svg', BASE+'/icon-192.png', BASE+'/icon-512.png', BASE+'/manifest.json'];
 const CDN_ASSETS = ['https://cdn.tailwindcss.com'];
 
 self.addEventListener('install', e => {
@@ -28,7 +29,7 @@ self.addEventListener('fetch', e => {
         return response;
       }).catch(() => {
         // Offline fallback for navigation requests
-        if (e.request.mode === 'navigate') return caches.match('/index.html');
+        if (e.request.mode === 'navigate') return caches.match(BASE + '/index.html');
       });
     })
   );
