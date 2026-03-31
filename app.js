@@ -1,10 +1,10 @@
 // ===== Part 0: IndexedDB Data Layer =====
 let _db = null;
-const STORES = ['medicines', 'members', 'experiences', 'settings'];
+const STORES = ['medicines', 'members', 'experiences', 'settings', 'healthRecords'];
 
 function _idbOpen() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('MedKitDB', 1);
+    const req = indexedDB.open('MedKitDB', 2);
     req.onupgradeneeded = e => {
       const db = e.target.result;
       STORES.forEach(n => { if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, n === 'settings' ? { keyPath: 'key' } : undefined); });
@@ -45,7 +45,7 @@ function _idbClear(store) {
 }
 
 // In-memory cache
-const _cache = { medicines: [], members: [], experiences: [] };
+const _cache = { medicines: [], members: [], experiences: [], healthRecords: [] };
 let _settingsCache = null;
 
 const DB = {
@@ -57,6 +57,8 @@ const DB = {
   set members(v) { _cache.members = v; _idbPut('members', v, '_data').catch(console.error); },
   get experiences() { return (_cache.experiences || []).sort((a, b) => new Date(b.date) - new Date(a.date)); },
   set experiences(v) { _cache.experiences = v; _idbPut('experiences', v, '_data').catch(console.error); },
+  get healthRecords() { return (_cache.healthRecords || []).sort((a, b) => new Date(b.date) - new Date(a.date)); },
+  set healthRecords(v) { _cache.healthRecords = v; _idbPut('healthRecords', v, '_data').catch(console.error); },
 };
 
 // ===== Part 1: Data Layer, Utils, Voice, Settings, Photo =====
@@ -98,13 +100,13 @@ async function initDB() {
   try {
     await _idbOpen();
     // Load existing IDB data
-    for (const k of ['medicines', 'members', 'experiences']) {
+    for (const k of ['medicines', 'members', 'experiences', 'healthRecords']) {
       const d = await _idbGet(k, '_data');
       if (d && d.length) _cache[k] = d;
     }
     await _loadSettings();
     // Migrate from localStorage if IDB is empty
-    if (!_cache.medicines.length && !_cache.members.length && !_cache.experiences.length) {
+    if (!_cache.medicines.length && !_cache.members.length && !_cache.experiences.length && !_cache.healthRecords.length) {
       await migrateFromLS();
     }
   } catch (e) {
@@ -193,14 +195,14 @@ async function clearAllData() {
   if (!confirm('⚠️ 确定要清除所有数据吗？此操作不可恢复！\n\n建议先导出备份。')) return;
   if (!confirm('再次确认：删除所有药品、成员、就医记录？')) return;
   try {
-    await Promise.all(['medicines', 'members', 'experiences', 'settings'].map(s => _idbClear(s)));
-    _cache.medicines = []; _cache.members = []; _cache.experiences = []; _settingsCache = {};
+    await Promise.all(['medicines', 'members', 'experiences', 'settings', 'healthRecords'].map(s => _idbClear(s)));
+    _cache.medicines = []; _cache.members = []; _cache.experiences = []; _cache.healthRecords = []; _settingsCache = {};
     closeM(); toast('已清除所有数据'); render();
   } catch (e) { toast('清除失败：' + e.message); }
 }
 function exportData() {
   toast('正在导出...');
-  const data = { medicines: _cache.medicines, members: _cache.members, experiences: _cache.experiences, settings: _settingsCache || {}, exportedAt: new Date().toISOString(), version: 2 };
+  const data = { medicines: _cache.medicines, members: _cache.members, experiences: _cache.experiences, healthRecords: _cache.healthRecords || [], settings: _settingsCache || {}, exportedAt: new Date().toISOString(), version: 3 };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '药小记_'+new Date().toISOString().slice(0,10)+'.json'; a.click(); URL.revokeObjectURL(a.href); toast('已导出');
 }
@@ -225,6 +227,11 @@ function importData(e) {
         const ids = new Set(_cache.experiences.map(m => m.id));
         _cache.experiences = [..._cache.experiences, ...d.experiences.filter(m => !ids.has(m.id))];
         DB.experiences = _cache.experiences;
+      }
+      if (d.healthRecords && Array.isArray(d.healthRecords)) {
+        const ids = new Set(_cache.healthRecords.map(r => r.id));
+        _cache.healthRecords = [..._cache.healthRecords, ...d.healthRecords.filter(r => !ids.has(r.id))];
+        DB.healthRecords = _cache.healthRecords;
       }
       if (d.settings && typeof d.settings === 'object') {
         for (const [k, v] of Object.entries(d.settings)) { if (v) saveSetting(k, v); }
@@ -288,6 +295,30 @@ function exportCSV() {
     _csvDownload('家庭成员_' + date + '.csv', BOM, mbCSV);
   }
 
+  // 4. 健康档案（按成员分文件）
+  const hrByMember = {};
+  (_cache.healthRecords || []).forEach(r => {
+    const mb = getMb(r.memberId);
+    const name = mb ? (MO[mb.relation]||'') + mb.name : '未知成员';
+    if (!hrByMember[name]) hrByMember[name] = [];
+    hrByMember[name].push(r);
+  });
+  for (const [memberName, hrs] of Object.entries(hrByMember)) {
+    hrs.sort((a, b) => (b.date||'').localeCompare(a.date||''));
+    const hrHeaders = ['检查日期','医院','检查类型','指标名称','数值','参考范围','是否异常','备注'];
+    let hrCSV = _csvLine(hrHeaders) + '\n';
+    hrs.forEach(r => {
+      if (r.indicators && r.indicators.length) {
+        r.indicators.forEach(ind => {
+          hrCSV += _csvLine([r.date, r.hospital, r.type||'', ind.name, ind.value, ind.refRange, ind.isAbnormal ? '是' : '否', r.notes||'']) + '\n';
+        });
+      } else {
+        hrCSV += _csvLine([r.date, r.hospital, r.type||'', '', '', '', '', r.notes||'']) + '\n';
+      }
+    });
+    _csvDownload('健康档案_' + memberName + '_' + date + '.csv', BOM, hrCSV);
+  }
+
   toast('已导出 Excel 表格');
 }
 
@@ -298,6 +329,7 @@ async function exportPhotos() {
   let photoCount = 0;
   allMeds.forEach(m => { if (m.photos && m.photos.length) photoCount += m.photos.length; });
   allExps.forEach(e => { if (e.photos && e.photos.length) photoCount += e.photos.length; });
+  (_cache.healthRecords || []).forEach(r => { if (r.pdfBase64) photoCount++; });
 
   if (!photoCount) { toast('没有照片可导出'); return; }
   if (typeof JSZip === 'undefined') { toast('需要网络加载 JSZip 库，请检查网络'); return; }
@@ -328,6 +360,21 @@ async function exportPhotos() {
       folder.file(prefix + '_' + (i + 1) + '.jpg', b64, { base64: true });
     });
   });
+
+  // 健康档案PDF（按成员 → 年份分文件夹）
+  const hrs = _cache.healthRecords || [];
+  let hrPdfCount = 0;
+  hrs.forEach(r => {
+    if (!r.pdfBase64) return;
+    const mb = getMb(r.memberId);
+    const memberName = mb ? (MO[mb.relation]||'') + mb.name : '未知';
+    const year = (r.date || '未知').slice(0, 4);
+    const folder = zip.folder('健康档案').folder(memberName).folder(year + '年');
+    const fname = (r.date||'报告') + '_' + (r.hospital||'未命名') + '.pdf';
+    folder.file(fname, r.pdfBase64, { base64: true });
+    hrPdfCount++;
+  });
+  photoCount += hrPdfCount;
 
   // 同时导出一个索引文件
   let indexContent = '=== 药小记照片索引 ===\n导出时间：' + new Date().toLocaleString('zh-CN') + '\n\n';
@@ -361,6 +408,32 @@ async function exportPhotos() {
       items.forEach(e => {
         indexContent += '      ' + (e.date || '') + ' ' + (e.doctorName || '') + (e.diagnosis ? ' — ' + e.diagnosis : '') + ' — ' + e.photos.length + ' 张\n';
       });
+    }
+  }
+  // 健康档案索引
+  const hrGroups = {};
+  hrs.forEach(r => {
+    const mb = getMb(r.memberId);
+    const name = mb ? (MO[mb.relation]||'') + mb.name : '未知';
+    if (!hrGroups[name]) hrGroups[name] = [];
+    hrGroups[name].push(r);
+  });
+  if (Object.keys(hrGroups).length) {
+    indexContent += '\n【健康档案】\n';
+    for (const [memberName, items] of Object.entries(hrGroups)) {
+      indexContent += '  ▸ ' + memberName + '\n';
+      const byYear = {};
+      items.forEach(r => { const y = (r.date||'未知').slice(0,4); if(!byYear[y]) byYear[y]=[]; byYear[y].push(r); });
+      for (const [year, items2] of Object.entries(byYear)) {
+        indexContent += '    ▸ ' + year + '年\n';
+        items2.forEach(r => {
+          indexContent += '      ' + (r.date||'') + ' ' + (r.hospital||'') + (r.type?' ('+r.type+')':'');
+          const abn = (r.indicators||[]).filter(i=>i.isAbnormal).length;
+          if (abn) indexContent += ' — ' + abn + '项异常';
+          if (r.pdfBase64) indexContent += ' [PDF]';
+          indexContent += '\n';
+        });
+      }
     }
   }
   zip.file('照片索引.txt', indexContent);
@@ -436,6 +509,8 @@ const RELS = ['本人','爸爸','妈妈','爷爷','奶奶','外公','外婆','�
 const MO = {'本人':'🙋','爸爸':'👨','妈妈':'👩','爷爷':'👴','奶奶':'👵','外公':'👴','外婆':'👵','丈夫':'👨','妻子':'👩','儿子':'👦','女儿':'👧','哥哥':'👦','姐姐':'👧','弟弟':'👦','妹妹':'👧'};
 const UNITS = ['粒','片','支','袋','ml','g','瓶','盒','贴','包'];
 let curTab = 'home', medSearch = '', vFlt = '', vFltType = '', vGroup = 'time';
+let _memberViewId = null, _memberSubTab = 'visits';
+let _healthIndicators = []; // temp for health form
 
 // ===== Smart Insights =====
 function findDuplicates() { const ms=DB._g('medicines'), b={}; ms.forEach(m=>{const k=m.name.trim();if(!b[k])b[k]=[];b[k].push(m);}); return Object.entries(b).filter(([_,a])=>a.length>1).map(([name,items])=>({name,items})); }
@@ -702,15 +777,76 @@ function delMed(id) {
 
 // ===== MEMBERS =====
 function rMbs() {
+  if (_memberViewId) return rMemberDetail(_memberViewId);
   const ms = DB.members;
   if (!ms.length) return '<div class="fade-in text-center py-16"><div class="text-6xl mb-4">👨‍👩‍👧‍👦</div><p class="text-gray-400 mb-6">添加家庭成员</p><button onclick="openMbForm()" class="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-medium">添加成员</button></div>';
   let h = '<div class="fade-in grid grid-cols-2 gap-3">';
   ms.forEach(m => {
     const ec = DB.experiences.filter(e=>e.memberId===m.id).length;
+    const hc = DB.healthRecords.filter(r=>r.memberId===m.id).length;
     const age = calcAge(m.birthday);
-    h += '<div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center relative group"><div class="text-4xl mb-2">'+(MO[m.relation]||'👤')+'</div><div class="font-semibold text-gray-800">'+esc(m.name)+'</div><div class="text-sm text-gray-400">'+esc(m.relation||'')+'</div>'+(age?'<div class="text-xs text-gray-500 mt-0.5">'+age+'</div>':'')+(ec?'<div class="text-xs text-blue-500 mt-1">'+ec+'条就医记录</div>':'')+'<div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1"><button onclick="openMbForm(\''+m.id+'\')" class="p-1 text-gray-400 hover:text-blue-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button onclick="delMb(\''+m.id+'\')" class="p-1 text-gray-400 hover:text-red-500"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></div>';
+    h += '<div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 text-center cursor-pointer active:scale-[0.97] transition-transform" onclick="_memberViewId=\''+m.id+'\';_memberSubTab=\'visits\';render()">';
+    h += '<div class="text-4xl mb-2">'+(MO[m.relation]||'👤')+'</div>';
+    h += '<div class="font-semibold text-gray-800">'+esc(m.name)+'</div>';
+    h += '<div class="text-sm text-gray-400">'+esc(m.relation||'')+'</div>';
+    if(age) h += '<div class="text-xs text-gray-500 mt-0.5">'+age+'</div>';
+    if(ec||hc) h += '<div class="flex justify-center gap-2 mt-1"><span class="text-xs text-blue-500">'+ec+'就医</span>'+(hc?'<span class="text-xs" style="color:var(--c-primary)">'+hc+'档案</span>':'')+'</div>';
+    h += '</div>';
   });
   h += '</div><button onclick="openMbForm()" class="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors mt-3">+ 添加成员</button>';
+  return h;
+}
+// ===== Member Detail View =====
+function rMemberDetail(memberId) {
+  const mb = getMb(memberId);
+  if (!mb) { _memberViewId = null; return rMbs(); }
+  let h = '<div class="fade-in space-y-4">';
+  h += '<div class="flex items-center gap-3">';
+  h += '<button onclick="_memberViewId=null;render()" class="p-2 rounded-xl hover:bg-gray-100 transition-colors"><svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg></button>';
+  h += '<div class="flex items-center gap-2 flex-1"><span class="text-2xl">'+(MO[mb.relation]||'👤')+'</span><div><div class="font-bold text-base">'+esc(mb.name)+'</div><div class="text-xs text-gray-400">'+esc(mb.relation||'')+(mb.birthday?' · '+calcAge(mb.birthday):'')+'</div></div></div>';
+  h += '<button onclick="_memberViewId=null;openMbForm(\''+memberId+'\')" class="p-2 text-gray-400 hover:text-blue-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>';
+  h += '</div>';
+  h += '<div class="flex gap-0.5 bg-gray-100 rounded-xl p-1">';
+  h += '<button onclick="_memberSubTab=\'visits\';render()" class="flex-1 py-2.5 rounded-lg text-sm font-medium transition-all '+(_memberSubTab==='visits'?'bg-white shadow-sm text-gray-700':'text-gray-400')+'">📝 就医记录</button>';
+  h += '<button onclick="_memberSubTab=\'health\';render()" class="flex-1 py-2.5 rounded-lg text-sm font-medium transition-all '+(_memberSubTab==='health'?'bg-white shadow-sm text-gray-700':'text-gray-400')+'">🏥 健康档案</button>';
+  h += '</div>';
+  if (_memberSubTab === 'visits') h += rMemberVisits(memberId);
+  else h += rMemberHealth(memberId);
+  h += '</div>';
+  return h;
+}
+function rMemberVisits(memberId) {
+  const exps = DB.experiences.filter(e => e.memberId === memberId);
+  if (!exps.length) return '<div class="text-center py-12"><div class="text-5xl mb-3">📝</div><p class="text-gray-400 mb-4">还没有就医记录</p><button onclick="openVisitForm()" class="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-medium">记录就医</button></div>';
+  let h = '<div class="space-y-2"><button onclick="openVisitForm()" class="w-full py-3 btn-primary text-sm font-semibold">+ 记录就医</button>';
+  exps.forEach(e => { h += visitCard(e); });
+  h += '</div>';
+  return h;
+}
+function rMemberHealth(memberId) {
+  const hrs = DB.healthRecords.filter(r => r.memberId === memberId);
+  let h = '<button onclick="openHealthForm(\''+memberId+'\')" class="w-full py-3 btn-primary text-sm font-semibold">+ 添加健康档案</button>';
+  if (!hrs.length) return h + '<div class="text-center py-12"><div class="text-5xl mb-3">🏥</div><p class="text-gray-400">还没有健康档案</p><p class="text-xs text-gray-400 mt-1">上传体检报告 PDF，记录异常指标</p></div>';
+  const groups = {};
+  hrs.forEach(r => { const y = (r.date||'未知').slice(0,4); if(!groups[y]) groups[y]=[]; groups[y].push(r); });
+  Object.keys(groups).sort().reverse().forEach(year => {
+    h += '<div class="mb-4"><div class="group-header group-blue text-sm font-semibold text-gray-600 mb-2">'+year+'年 <span class="text-xs font-normal text-gray-400">'+groups[year].length+'份</span></div><div class="space-y-2 ml-1">';
+    groups[year].forEach(r => {
+      const abn = (r.indicators||[]).filter(i=>i.isAbnormal).length;
+      h += '<div class="card px-3.5 py-3 cursor-pointer" onclick="viewHealthDetail(\''+r.id+'\')">';
+      h += '<div class="flex items-center gap-3">';
+      h += '<div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 '+(abn>0?'bg-red-50':'bg-green-50')+' text-lg">'+(abn>0?'🔴':'🟢')+'</div>';
+      h += '<div class="flex-1 min-w-0">';
+      h += '<div class="flex items-center justify-between"><span class="font-medium text-sm truncate">'+esc(r.hospital||'未填写医院')+'</span><span class="text-xs text-gray-400 shrink-0">'+(r.date||'')+'</span></div>';
+      h += '<div class="flex items-center gap-2 mt-0.5 flex-wrap">';
+      if(r.type) h += '<span class="text-xs px-2 py-0.5 rounded-full tag-blue">'+esc(r.type)+'</span>';
+      if(r.pdfBase64) h += '<span class="text-xs text-gray-400">📄 PDF</span>';
+      if(abn>0) h += '<span class="text-xs text-red-500 font-medium">'+abn+'项异常</span>';
+      else if(r.indicators&&r.indicators.length) h += '<span class="text-xs text-green-600">全部正常</span>';
+      h += '</div></div></div></div>';
+    });
+    h += '</div></div>';
+  });
   return h;
 }
 function openMbForm(id) {
@@ -731,6 +867,248 @@ function delMb(id) {
   if (!confirm('确定删除此成员？相关记录也会删除。')) return;
   DB.members = DB.members.filter(m=>m.id!==id);
   DB.experiences = DB.experiences.filter(e=>e.memberId!==id);
+  DB.healthRecords = DB.healthRecords.filter(r=>r.memberId!==id);
+  toast('已删除'); render();
+}
+
+// ===== Health Records =====
+const HR_TYPES = ['年度体检','专项检查','其他'];
+let _healthPdfBase64 = null; // temp for form
+
+function openHealthForm(memberId, id) {
+  const existing = id ? DB.healthRecords.find(r => r.id === id) : null;
+  const isEdit = !!existing;
+  _healthIndicators = existing && existing.indicators ? [...existing.indicators] : [];
+  _healthPdfBase64 = existing && existing.pdfBase64 ? existing.pdfBase64 : null;
+
+  const r = existing || {};
+  const today = new Date().toISOString().slice(0,10);
+  const typeOpts = HR_TYPES.map(t => '<option value="'+t+'" '+(r.type===t?'selected':'')+'>'+t+'</option>').join('');
+
+  let h = '<div class="p-5"><div class="flex items-center justify-between mb-5"><h2 class="text-lg font-bold">'+(isEdit?'编辑健康档案':'🏥 添加健康档案')+'</h2><button onclick="closeM()" class="text-gray-400"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>';
+  h += '<form onsubmit="saveHealth(event,\''+memberId+'\',\''+(id||'')+'\')" class="space-y-4">';
+
+  // PDF upload
+  h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">📄 体检报告 PDF</label>';
+  h += '<div id="pdfUploadArea" class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-colors" onclick="document.getElementById(\'pdfFileInput\').click()">';
+  if (_healthPdfBase64) {
+    h += '<div class="text-sm text-green-600 font-medium">✅ 已选择 PDF</div><div class="text-xs text-gray-400 mt-1">点击重新选择</div>';
+  } else {
+    h += '<div class="text-3xl mb-1">📄</div><div class="text-sm text-gray-400">点击上传 PDF 文件</div>';
+  }
+  h += '</div>';
+  h += '<input id="pdfFileInput" type="file" accept=".pdf" onchange="handlePdfUpload(event)" class="hidden">';
+  h += '</div>';
+
+  // Basic info
+  h += '<div class="grid grid-cols-2 gap-3">';
+  h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">检查日期 *</label><input name="hrDate" type="date" value="'+(r.date||today)+'" required class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div>';
+  h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">检查类型</label><select name="hrType" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"><option value="">选择类型</option>'+typeOpts+'</select></div>';
+  h += '</div>';
+
+  h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">医院名称</label><input name="hrHospital" value="'+esc(r.hospital||'')+'" placeholder="如：北京协和医院" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div>';
+
+  // Indicators section
+  h += '<div><div class="flex items-center justify-between mb-2"><label class="block text-sm font-medium text-gray-700">📊 异常指标</label><button type="button" onclick="addHealthIndicator()" class="text-xs font-medium" style="color:var(--c-primary)">+ 添加指标</button></div>';
+  h += '<div id="indicatorsList"></div>';
+  h += '</div>';
+
+  // Notes
+  h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">备注（医生建议 / 需要复查的点）</label><div class="flex gap-2 items-end"><textarea name="hrNotes" rows="3" placeholder="如：3个月后复查肝功能、注意控制饮食..." class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">'+esc(r.notes||'')+'</textarea>'+voiceBtn('hrNotes')+'</div></div>';
+
+  h += '<button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 active:scale-[0.98] transition-all">'+(isEdit?'保存修改':'保存健康档案')+'</button>';
+  if (isEdit) h += '<button type="button" onclick="delHealth(\''+id+'\');closeM()" class="w-full text-red-500 py-2 text-sm mt-1">删除此档案</button>';
+  h += '</form></div>';
+
+  openM(h);
+  setTimeout(renderIndicatorsList, 50);
+}
+
+function handlePdfUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.type !== 'application/pdf') { toast('请选择 PDF 文件'); return; }
+  if (file.size > 20 * 1024 * 1024) { toast('文件过大，请控制在 20MB 以内'); return; }
+  toast('正在读取 PDF...');
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const base64 = ev.target.result.split(',')[1];
+    _healthPdfBase64 = base64;
+    toast('✅ PDF 已加载 (' + (file.size/1024/1024).toFixed(1) + 'MB)');
+    const area = $('pdfUploadArea');
+    if (area) area.innerHTML = '<div class="text-sm text-green-600 font-medium">✅ ' + esc(file.name) + '</div><div class="text-xs text-gray-400 mt-1">' + (file.size/1024/1024).toFixed(1) + 'MB · 点击重新选择</div>';
+  };
+  reader.onerror = () => toast('读取文件失败');
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function addHealthIndicator() {
+  _healthIndicators.push({ name: '', value: '', refRange: '', isAbnormal: true });
+  renderIndicatorsList();
+}
+function removeHealthIndicator(idx) {
+  _healthIndicators.splice(idx, 1);
+  renderIndicatorsList();
+}
+function renderIndicatorsList() {
+  const el = $('indicatorsList');
+  if (!el) return;
+  if (!_healthIndicators.length) {
+    el.innerHTML = '<div class="text-sm text-gray-400 py-2 text-center">暂未添加指标，可根据体检报告手动录入异常项</div>';
+    return;
+  }
+  let h = '<div class="space-y-2">';
+  _healthIndicators.forEach((ind, i) => {
+    h += '<div class="bg-gray-50 rounded-xl p-3 space-y-2">';
+    h += '<div class="flex items-center justify-between"><span class="text-xs font-medium text-gray-500">指标 #'+(i+1)+'</span><button type="button" onclick="removeHealthIndicator('+i+')" class="text-gray-400 hover:text-red-500 text-xs">删除</button></div>';
+    h += '<input type="text" placeholder="指标名称（如：谷丙转氨酶）" value="'+esc(ind.name)+'" oninput="_healthIndicators['+i+'].name=this.value" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">';
+    h += '<div class="grid grid-cols-2 gap-2">';
+    h += '<input type="text" placeholder="你的值（如：52）" value="'+esc(ind.value)+'" oninput="_healthIndicators['+i+'].value=this.value" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">';
+    h += '<input type="text" placeholder="参考范围（如：0-40）" value="'+esc(ind.refRange)+'" oninput="_healthIndicators['+i+'].refRange=this.value" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">';
+    h += '</div>';
+    h += '<label class="flex items-center gap-2 text-sm"><input type="checkbox" '+(ind.isAbnormal?'checked':'')+' onchange="_healthIndicators['+i+'].isAbnormal=this.checked" class="accent-red-500"><span class="text-red-600 font-medium">异常</span><span class="text-gray-400 text-xs">（取消勾选表示正常）</span></label>';
+    h += '</div>';
+  });
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function saveHealth(e, memberId, id) {
+  e.preventDefault();
+  const f = e.target;
+  const d = {
+    memberId,
+    date: f.hrDate.value,
+    type: f.hrType.value,
+    hospital: f.hrHospital.value.trim(),
+    indicators: _healthIndicators.filter(i => i.name.trim()),
+    notes: f.hrNotes.value.trim(),
+    pdfBase64: _healthPdfBase64 || null
+  };
+  if (!d.date) return;
+  const hrs = DB._g('healthRecords');
+  if (id) {
+    const idx = hrs.findIndex(r => r.id === id);
+    if (idx >= 0) hrs[idx] = { ...hrs[idx], ...d };
+  } else {
+    d.id = uid();
+    d.createdAt = new Date().toISOString();
+    hrs.push(d);
+  }
+  try {
+    DB.healthRecords = hrs;
+  } catch(err) {
+    toast('保存失败：' + err.message);
+    console.error('saveHealth error:', err);
+    return;
+  }
+  _healthIndicators = [];
+  _healthPdfBase64 = null;
+  closeM();
+  toast(id ? '已更新' : '已保存');
+  render();
+}
+
+function viewHealthDetail(id) {
+  const r = DB.healthRecords.find(x => x.id === id);
+  if (!r) return;
+  const mb = getMb(r.memberId);
+  const abnInds = (r.indicators||[]).filter(i => i.isAbnormal);
+  const normalInds = (r.indicators||[]).filter(i => !i.isAbnormal);
+
+  let h = '<div class="p-5"><div class="flex items-center justify-between mb-4">';
+  h += '<h2 class="text-lg font-bold">健康档案详情</h2>';
+  h += '<button onclick="closeM()" class="text-gray-400"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
+  h += '</div>';
+
+  // Tags
+  h += '<div class="flex items-center gap-2 mb-4">';
+  if (r.type) h += '<span class="text-xs px-2.5 py-1 rounded-full tag-blue font-medium">'+esc(r.type)+'</span>';
+  if (r.pdfBase64) h += '<span class="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">📄 PDF</span>';
+  if (abnInds.length) h += '<span class="text-xs px-2.5 py-1 rounded-full tag-red font-medium">🔴 '+abnInds.length+'项异常</span>';
+  else if (normalInds.length) h += '<span class="text-xs px-2.5 py-1 rounded-full tag-green font-medium">🟢 全部正常</span>';
+  h += '</div>';
+
+  // Info rows
+  const rows = [];
+  if (r.date) rows.push(['📅', '检查日期', r.date]);
+  if (mb) rows.push(['👤', '成员', (MO[mb.relation]||'')+' '+esc(mb.name)]);
+  if (r.hospital) rows.push(['🏥', '医院', esc(r.hospital)]);
+  rows.forEach(([icon, label, val], i) => {
+    const brd = i < rows.length-1 ? 'border-b border-gray-100' : '';
+    h += '<div class="flex gap-3 px-4 py-3 '+brd+'"><span class="text-base shrink-0">'+icon+'</span><div><div class="text-xs text-gray-400">'+label+'</div><div class="text-sm font-medium mt-0.5">'+val+'</div></div></div>';
+  });
+  h += '</div>';
+
+  // PDF preview
+  if (r.pdfBase64) {
+    h += '<div class="mb-4"><button onclick="viewHealthPdf(\''+r.id+'\')" class="w-full py-3 btn-outline text-sm font-semibold flex items-center justify-center gap-2">📄 查看 PDF 原件</button></div>';
+  }
+
+  // Abnormal indicators
+  if (abnInds.length) {
+    h += '<div class="mb-4"><div class="text-sm font-semibold text-red-700 mb-2">🔴 异常指标</div>';
+    h += '<div class="space-y-2">';
+    abnInds.forEach(ind => {
+      h += '<div class="bg-red-50 rounded-xl p-3 flex items-center justify-between">';
+      h += '<div><div class="text-sm font-medium text-red-800">'+esc(ind.name)+'</div>';
+      h += '<div class="text-xs text-red-500">参考：'+esc(ind.refRange||'—')+'</div></div>';
+      h += '<span class="text-sm font-bold text-red-600">'+esc(ind.value)+'</span>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  }
+
+  // Normal indicators
+  if (normalInds.length) {
+    h += '<div class="mb-4"><div class="text-sm font-semibold text-green-700 mb-2">🟢 正常指标</div>';
+    h += '<div class="space-y-1.5">';
+    normalInds.forEach(ind => {
+      h += '<div class="bg-green-50 rounded-lg px-3 py-2 flex items-center justify-between">';
+      h += '<span class="text-sm text-green-800">'+esc(ind.name)+'</span>';
+      h += '<span class="text-sm text-green-600">'+esc(ind.value)+'</span>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  }
+
+  // Notes
+  if (r.notes) {
+    h += '<div class="p-3.5 rounded-xl text-sm mb-4 bg-gray-50 text-gray-600"><span class="font-medium">💬 备注</span><div class="mt-1 whitespace-pre-wrap">'+esc(r.notes)+'</div></div>';
+  }
+
+  // Actions
+  h += '<div class="flex gap-3">';
+  h += '<button onclick="closeM();openHealthForm(\''+r.memberId+'\',\''+r.id+'\')" class="flex-1 py-2.5 btn-outline text-sm font-medium">编辑</button>';
+  h += '<button onclick="delHealth(\''+r.id+'\')" class="flex-1 py-2.5 text-sm font-medium text-red-500 rounded-xl border border-red-200 active:scale-[0.98] transition-all">删除</button>';
+  h += '</div></div>';
+
+  openM(h);
+}
+
+function viewHealthPdf(id) {
+  const r = DB.healthRecords.find(x => x.id === id);
+  if (!r || !r.pdfBase64) { toast('PDF 不存在'); return; }
+  // Convert base64 to blob and open in new tab/iframe
+  const binary = atob(r.pdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  // Try opening in new tab first
+  const win = window.open(url, '_blank');
+  if (!win) {
+    // Fallback: show in modal with iframe
+    let h = '<div class="p-5"><div class="flex items-center justify-between mb-3"><h2 class="text-lg font-bold">📄 PDF 原件</h2><button onclick="closeM()" class="text-gray-400">✕</button></div>';
+    h += '<iframe src="'+url+'" class="w-full rounded-xl border border-gray-200" style="height:70vh"></iframe></div>';
+    openM(h);
+  }
+}
+
+function delHealth(id) {
+  if (!confirm('确定删除这条健康档案？')) return;
+  DB.healthRecords = DB._g('healthRecords').filter(r => r.id !== id);
   toast('已删除'); render();
 }
 
