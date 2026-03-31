@@ -901,7 +901,7 @@ function openHealthForm(memberId, id) {
   h += '</div>';
 
   // Basic info
-  h += '<div class="grid grid-cols-2 gap-3">';
+  h += '<div class="space-y-3">';
   h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">检查日期 *</label><input name="hrDate" type="date" value="'+(r.date||today)+'" required class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div>';
   h += '<div><label class="block text-sm font-medium text-gray-700 mb-1">检查类型</label><select name="hrType" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"><option value="">选择类型</option>'+typeOpts+'</select></div>';
   h += '</div>';
