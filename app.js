@@ -1251,7 +1251,7 @@ function openVisitForm(id) {
     '<form onsubmit="saveVisit(event,\''+(id||'')+'\')" class="space-y-4">'+
 
     // Photos section
-    '<div class="flex gap-2 justify-center"><button type="button" onclick="openCamera()" class="flex-1 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium active:scale-[0.98] transition-all text-sm">📷 拍照处方</button><button type="button" onclick="openCamera()" class="flex-1 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-medium active:scale-[0.98] transition-all text-sm">📁 选图</button></div>'+
+    '<div class="flex gap-2 justify-center"><button type="button" onclick="openCamera()" class="flex-1 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium active:scale-[0.98] transition-all text-sm">📷 拍照处方</button><button type="button" onclick="pickImage()" class="flex-1 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-medium active:scale-[0.98] transition-all text-sm">📁 选图</button></div>'+
     '<div id="photoCounter"><div class="text-center py-2 text-gray-400 text-xs">点上方按钮拍照处方单</div></div>'+
 
     // Member + Date
