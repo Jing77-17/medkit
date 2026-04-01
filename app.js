@@ -457,7 +457,7 @@ function openCamera() {
 }
 function pickImage() {
   const s = getSettings(); if (!s.apiKey) { toast('请先在设置中填入 API Key'); openSettings(); return; }
-  const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+  const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/png, image/jpeg, image/gif, image/webp, image/bmp';
   input.onchange = e => { const file = e.target.files[0]; if (file) addPhotoToQueue(file); }; input.click();
 }
 let _photoQueue = [];
