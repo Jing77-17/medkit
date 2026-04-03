@@ -703,7 +703,7 @@ function rMeds() {
 
   // Search bar
   h += '<div class="sticky top-[52px] z-20 pb-2" style="background:var(--c-bg)">';
-  h += '<div class="relative"><input type="text" id="medSearchInput" value="'+esc(medSearch)+'" placeholder="🔍 搜索药品名称..." oninput="medSearch=this.value.trim().toLowerCase();renderMedsList()" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">';
+  h += '<div class="relative"><input type="text" id="medSearchInput" value="'+esc(medSearch)+'" placeholder="🔍 搜索药品名称、功效、备注..." oninput="medSearch=this.value.trim().toLowerCase();renderMedsList()" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">';
   h += '<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></div>';
   // Category filter tabs — only show categories that have medicines
   const usedCats = [...new Set(allMs.map(m => m.category).filter(Boolean))];
@@ -741,7 +741,7 @@ function medsListHTML(allMs) {
   const q = medSearch, cf = _medCategoryFilter;
   let ms = allMs;
   if (cf && cf !== '全部') ms = ms.filter(m => m.category && m.category.includes(cf));
-  if (q) ms = ms.filter(m => m.name.toLowerCase().includes(q));
+  if (q) ms = ms.filter(m => m.name.toLowerCase().includes(q) || (m.efficacy||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q) || (m.notes||'').toLowerCase().includes(q));
   if (!ms.length) return '<div class="text-center py-8 text-gray-400 text-sm">'+(q?'没有找到匹配的药品':'还没有添加药品')+'</div>';
   const exp = ms.filter(m => expSt(m.expiryDate).s === 'expired');
   const wrn = ms.filter(m => expSt(m.expiryDate).s === 'warning');
