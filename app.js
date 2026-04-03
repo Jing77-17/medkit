@@ -489,10 +489,11 @@ function showRecognizeResult(d) {
   h += '</div><div class="flex gap-3 mt-4"><button onclick="applyRecognizeResult()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium active:scale-[0.98] transition-all">✓ 确认填入</button><button onclick="closeM()" class="flex-1 py-3 border rounded-xl text-gray-600">取消</button></div></div>';
   openM(h);
 }
-let _recognizedData = null;
+let _recognizedData = null, _recognizedPhotos = null;
 function applyRecognizeResult() {
   _recognizedData = {};
   document.querySelectorAll('.result-check').forEach(chk => { if(!chk.checked) return; const f = chk.closest('.bg-gray-50').querySelector('.result-field'); if(!f) return; const k=f.dataset.key, v=f.value.trim(); if(v) _recognizedData[k]=v; });
+  _recognizedPhotos = [..._photoQueue]; // preserve recognition photos
   closeM();
   openMedForm();
   toast('✅ 已填入表单');
@@ -504,12 +505,14 @@ function updBdg() {
 }
 
 // ===== Constants =====
-const CATS = ['解热镇痛','感冒用药','抗生素','消化系统','心血管','皮肤外用','维生素/营养','眼科用药','止咳化痰','抗过敏','中药','其他'];
+const CATS = ['感冒','肠胃','消炎','过敏','心血管','内分泌','皮肤','骨科','神经','维生素','儿童','其他'];
+const FILTER_CATS = ['全部','感冒','肠胃','消炎','过敏','心血管','内分泌','皮肤','骨科','神经','维生素','儿童','其他'];
 const RELS = ['本人','爸爸','妈妈','爷爷','奶奶','外公','外婆','丈夫','妻子','儿子','女儿','哥哥','姐姐','弟弟','妹妹','其他'];
 const MO = {'本人':'🙋','爸爸':'👨','妈妈':'👩','爷爷':'👴','奶奶':'👵','外公':'👴','外婆':'👵','丈夫':'👨','妻子':'👩','儿子':'👦','女儿':'👧','哥哥':'👦','姐姐':'👧','弟弟':'👦','妹妹':'👧'};
 const UNITS = ['粒','片','支','袋','ml','g','瓶','盒','贴','包'];
 let curTab = 'home', medSearch = '', vFlt = '', vFltType = '', vGroup = 'time';
 let _memberViewId = null, _memberSubTab = 'visits';
+let _expandedMedId = null, _medCategoryFilter = '全部';
 let _healthIndicators = []; // temp for health form
 
 // ===== Smart Insights =====
@@ -694,13 +697,21 @@ function showMissingEfficacy() {
 
 // ===== Part 3: Medicines (with search) + Members =====
 function rMeds() {
+  _expandedMedId = null;
   const allMs = DB.medicines;
   let h = '<div class="fade-in space-y-4">';
 
   // Search bar
   h += '<div class="sticky top-[52px] z-20 pb-2" style="background:var(--c-bg)">';
   h += '<div class="relative"><input type="text" id="medSearchInput" value="'+esc(medSearch)+'" placeholder="🔍 搜索药品名称..." oninput="medSearch=this.value.trim().toLowerCase();renderMedsList()" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">';
-  h += '<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></div></div>';
+  h += '<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></div>';
+  // Category filter tabs
+  h += '<div class="flex gap-2 mt-2 overflow-x-auto pb-1" style="-webkit-overflow-scrolling:touch;scrollbar-width:none">';
+  FILTER_CATS.forEach(c => {
+    const active = _medCategoryFilter === c;
+    h += '<button onclick="_medCategoryFilter=\''+c+'\';renderMedsList()" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all '+(active?'bg-[#E8564A] text-white shadow-sm':'bg-white text-gray-500 border border-gray-200 hover:border-[#E8564A] hover:text-[#E8564A]')+'">'+c+'</button>';
+  });
+  h += '</div></div>';
 
   h += '<div id="medsList">';
   h += medsListHTML(allMs);
@@ -719,8 +730,10 @@ function renderMedsList() {
   el.innerHTML = medsListHTML(allMs);
 }
 function medsListHTML(allMs) {
-  const q = medSearch;
-  const ms = q ? allMs.filter(m => m.name.toLowerCase().includes(q)) : allMs;
+  const q = medSearch, cf = _medCategoryFilter;
+  let ms = allMs;
+  if (cf && cf !== '全部') ms = ms.filter(m => m.category && m.category.includes(cf));
+  if (q) ms = ms.filter(m => m.name.toLowerCase().includes(q));
   if (!ms.length) return '<div class="text-center py-8 text-gray-400 text-sm">'+(q?'没有找到匹配的药品':'还没有添加药品')+'</div>';
   const exp = ms.filter(m => expSt(m.expiryDate).s === 'expired');
   const wrn = ms.filter(m => expSt(m.expiryDate).s === 'warning');
@@ -734,13 +747,48 @@ function medsListHTML(allMs) {
 }
 function mCard(m) {
   const e = expSt(m.expiryDate), d = e.s === 'expired';
-  const photoBadge = (m.photos&&m.photos.length) ? '<button onclick="event.stopPropagation();viewPhotos(\''+m.id+'\')" class="text-sm" title="查看照片">📷</button>' : '';
-  return '<div class="card p-3 '+(d?'opacity-60':'')+'"><div class="flex items-start justify-between"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-semibold" style="color:var(--c-text)">'+esc(m.name)+'</span>'+photoBadge+'<span class="text-xs px-2 py-0.5 rounded-full '+e.c+'">'+e.l+'</span></div>'+(m.category?'<div class="text-sm mb-1" style="color:var(--c-text2)">'+esc(m.category)+(m.efficacy?' · '+esc(m.efficacy):'')+'</div>':'')+'<div class="flex items-center gap-3 text-sm" style="color:var(--c-text2)">'+(m.quantity!=null?'<span>📦 剩余'+m.quantity+(m.unit||'')+'</span>':'')+'</div></div><div class="flex gap-1 ml-2 shrink-0"><button onclick="openMedForm(\''+m.id+'\')" class="p-1.5 hover:opacity-70" style="color:var(--c-text2)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button onclick="delMed(\''+m.id+'\')" class="p-1.5 hover:opacity-70" style="color:var(--c-text2)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></div></div>';
+  const expanded = _expandedMedId === m.id;
+  const thumb = (m.photos && m.photos.length) ? '<img src="data:image/jpeg;base64,'+m.photos[0]+'" class="w-10 h-10 rounded-lg object-cover shrink-0 border border-gray-100">' : '';
+  // Collapsed card
+  let h = '<div class="card p-3 '+(d?'opacity-60':'')+' cursor-pointer transition-all" onclick="toggleMedExpand(\''+m.id+'\')">';
+  h += '<div class="flex items-center gap-2"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-1 flex-wrap"><span class="font-semibold" style="color:var(--c-text)">'+esc(m.name)+'</span><span class="text-xs px-2 py-0.5 rounded-full '+e.c+'">'+e.l+'</span></div>';
+  h += (m.category?'<div class="text-sm mb-1" style="color:var(--c-text2)">'+esc(m.category)+(m.efficacy?' · '+esc(m.efficacy):'')+'</div>':'');
+  h += '<div class="flex items-center gap-3 text-sm" style="color:var(--c-text2)">'+(m.quantity!=null?'<span>📦 剩余'+m.quantity+(m.unit||'')+'</span>':'')+'</div>';
+  h += '</div>'+thumb;
+  if (!expanded) {
+    h += '<svg class="w-4 h-4 text-gray-300 shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>';
+  }
+  h += '</div>';
+  // Expanded detail
+  if (expanded) {
+    h += '<div class="mt-3 pt-3 border-t border-gray-100 space-y-2">';
+    const fields = [['分类',m.category],['功效/用途',m.efficacy],['剩余数量',m.quantity!=null?m.quantity+(m.unit||''):null],['过期日期',m.expiryDate],['备注',m.notes],['添加日期',m.addedDate]];
+    fields.forEach(([label,val]) => { if(val) h += '<div class="flex text-sm"><span class="text-gray-400 shrink-0 w-20">'+label+'</span><span class="text-gray-700">'+esc(String(val))+'</span></div>'; });
+    if (m.photos && m.photos.length) {
+      h += '<div class="mt-2"><div class="text-sm text-gray-400 mb-1">📷 照片</div><div class="flex gap-2 flex-wrap">';
+      m.photos.forEach((p,i) => { h += '<div class="relative group"><img src="data:image/jpeg;base64,'+p+'" class="w-16 h-16 rounded-lg object-cover cursor-pointer border border-gray-200" onclick="event.stopPropagation();viewPhotos(\''+m.id+'\')"><button type="button" onclick="event.stopPropagation();delMedPhoto(\''+m.id+'\','+i+')" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity leading-none">✕</button></div>'; });
+      h += '</div></div>';
+    }
+    h += '<div class="flex gap-2 pt-2"><button onclick="event.stopPropagation();openMedForm(\''+m.id+'\')" class="flex-1 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-medium active:scale-[0.98] transition-all">✏️ 编辑</button><button onclick="event.stopPropagation();delMed(\''+m.id+'\')" class="flex-1 py-2 bg-red-50 text-red-500 rounded-xl text-sm font-medium active:scale-[0.98] transition-all">🗑️ 删除</button></div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+function toggleMedExpand(id) { _expandedMedId = _expandedMedId === id ? null : id; renderMedsList(); }
+function delMedPhoto(medId, photoIdx) {
+  const ms = DB._g('medicines');
+  const m = ms.find(x => x.id === medId);
+  if (!m || !m.photos) return;
+  m.photos.splice(photoIdx, 1);
+  DB.medicines = ms;
+  toast('已删除照片');
+  renderMedsList();
 }
 function openMedForm(id) {
   const m = id?getM(id):{}, isE = !!id;
   if (_recognizedData && !id) { Object.entries(_recognizedData).forEach(([k,v])=>{ if(!m[k]) m[k]=v; }); _recognizedData=null; }
-  if (id && m.photos && m.photos.length) _photoQueue = [...m.photos]; else if (!id) _photoQueue = [];
+  if (id && m.photos && m.photos.length) _photoQueue = [...m.photos]; else if (!id) _photoQueue = _recognizedPhotos ? [..._recognizedPhotos] : []; _recognizedPhotos = null;
   const co = CATS.map(c=>'<option value="'+c+'" '+(m.category===c?'selected':'')+'>'+c+'</option>').join('');
   const uo = UNITS.map(u=>'<option value="'+u+'" '+(m.unit===u?'selected':'')+'>'+u+'</option>').join('');
   openM('<div class="p-5"><div class="flex items-center justify-between mb-5"><h2 class="text-lg font-bold">'+(isE?'编辑药品':'添加药品')+'</h2><button onclick="closeM()" class="text-gray-400"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><form onsubmit="saveMed(event,\''+(id||'')+'\')" class="space-y-4"><div class="flex gap-2 justify-center"><button type="button" onclick="openCamera()" class="flex-1 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium active:scale-[0.98] transition-all text-sm">📷 拍照</button><button type="button" onclick="pickImage()" class="flex-1 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-medium active:scale-[0.98] transition-all text-sm">📁 从相册选择</button></div><div id="photoCounter"><div class="text-center py-3 text-gray-400 text-sm">点上方按钮拍摄或选择药品包装</div></div><div><label class="block text-sm font-medium text-gray-700 mb-1">药品名称 *</label><input name="name" value="'+esc(m.name)+'" required placeholder="如：布洛芬" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div><div class="grid grid-cols-2 gap-3"><div><label class="block text-sm font-medium text-gray-700 mb-1">分类</label><select name="category" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"><option value="">选择分类</option>'+co+'</select></div><div><label class="block text-sm font-medium text-gray-700 mb-1">过期日期</label><input name="expiryDate" type="date" value="'+(m.expiryDate||'')+'" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div></div><div><label class="block text-sm font-medium text-gray-700 mb-1">功效/用途</label><div class="flex gap-2 items-end"><input id="med_efficacy" name="efficacy" value="'+esc(m.efficacy||'')+'" placeholder="如：退烧、缓解头痛" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500">'+voiceBtn('med_efficacy')+'</div></div><div class="grid grid-cols-2 gap-3"><div><label class="block text-sm font-medium text-gray-700 mb-1">剩余数量</label><input name="quantity" type="number" min="0" value="'+(m.quantity!=null?m.quantity:'')+'" placeholder="如：12" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">单位</label><select name="unit" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"><option value="">选择</option>'+uo+'</select></div></div><div><label class="block text-sm font-medium text-gray-700 mb-1">备注</label><div class="flex gap-2 items-end"><textarea id="med_notes" name="notes" rows="2" placeholder="用法用量等" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">'+esc(m.notes||'')+'</textarea>'+voiceBtn('med_notes')+'</div></div><button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 active:scale-[0.98] transition-all">'+(isE?'保存修改':'添加药品')+'</button>'+(isE?'<button type="button" onclick="delMed(\''+id+'\');closeM()" class="w-full text-red-500 py-2 text-sm mt-1">删除此药品</button>':'')+'</form></div>');

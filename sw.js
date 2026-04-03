@@ -1,4 +1,4 @@
-const CACHE = 'yaocabinet-v4';
+const CACHE = 'yaocabinet-v5';
 const BASE = self.location.pathname.replace(/\/sw\.js$/, '').replace(/\/$/, '') || '';
 const ASSETS = [BASE+'/index.html', BASE+'/app.js', BASE+'/icon.svg', BASE+'/icon-192.png', BASE+'/icon-512.png', BASE+'/manifest.json'];
 const CDN_ASSETS = ['https://cdn.tailwindcss.com'];

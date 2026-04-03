@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body>
+<div id="app"></div>
+<script>
+// Test if basic functions work
+try {
+  const app = document.getElementById('app');
+  app.innerHTML = '<h1>TEST OK</h1>';
+  console.log('DOM works');
+} catch(e) { console.error('DOM error:', e); }
+</script>
+<script src="app.js"></script>
+<script>
+// After app.js loads, check what render() did
+try {
+  const app = document.getElementById('app');
+  console.log('app.innerHTML length:', app.innerHTML.length);
+  console.log('app.innerHTML first 200:', app.innerHTML.substring(0, 200));
+} catch(e) { console.error('Render error:', e); }
+</script>
+</body>
+</html>
