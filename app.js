@@ -709,10 +709,10 @@ function rMeds() {
   const usedCats = [...new Set(allMs.map(m => m.category).filter(Boolean))];
   const visibleCats = ['全部', ...usedCats.filter(c => FILTER_CATS.includes(c))];
   if (_medCategoryFilter !== '全部' && !visibleCats.includes(_medCategoryFilter)) _medCategoryFilter = '全部';
-  h += '<div class="flex gap-2 mt-2 overflow-x-auto pb-1" style="-webkit-overflow-scrolling:touch;scrollbar-width:none">';
+  h += '<div class="flex gap-2 mt-2 overflow-x-auto pb-1" style="-webkit-overflow-scrolling:touch;scrollbar-width:none" id="catTabs">';
   visibleCats.forEach(c => {
     const active = _medCategoryFilter === c;
-    h += '<button onclick="_medCategoryFilter=\''+c+'\';renderMedsList()" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all '+(active?'bg-[#E8564A] text-white shadow-sm':'bg-white text-gray-500 border border-gray-200 hover:border-[#E8564A] hover:text-[#E8564A]')+'">'+c+'</button>';
+    h += '<button onclick="filterCat(\''+c+'\')" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all '+(active?'bg-[#E8564A] text-white shadow-sm':'bg-white text-gray-500 border border-gray-200 hover:border-[#E8564A] hover:text-[#E8564A]')+'">'+c+'</button>';
   });
   h += '</div></div>';
 
@@ -726,6 +726,11 @@ function rMeds() {
 
   h += '<button onclick="openMedForm()" class="fixed bottom-20 right-4 w-14 h-14 btn-primary rounded-full shadow-lg flex items-center justify-center text-2xl z-20 active:scale-95 transition-all">+</button></div>';
   return h;
+}
+function filterCat(c) {
+  _medCategoryFilter = c;
+  curTab = 'meds'; // ensure we're on meds tab
+  render(); // re-render entire page to update tab highlights + list
 }
 function renderMedsList() {
   const el = $('medsList'); if (!el) return;
